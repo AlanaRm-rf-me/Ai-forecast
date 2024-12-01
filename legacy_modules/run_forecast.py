@@ -1,4 +1,4 @@
-from crypto_forecast import get_price_forecast
+from ai_forecast import ai_price_forecast
 
 def main():
     # CoinGecko API endpoint
@@ -8,7 +8,7 @@ def main():
     crypto_id = "bitcoin"
     
     # Get and display forecast
-    forecast_data = get_price_forecast(
+    forecast_data = ai_price_forecast(
         api_url=api_url,
         crypto_id=crypto_id,
         historical_days=30,  # Use 30 days of historical data
