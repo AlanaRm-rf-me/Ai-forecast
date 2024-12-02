@@ -41,22 +41,32 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 print(f"Training will utilize {num_cores} CPU cores")
 
 # Configure GPU settings
-physical_devices = tf.config.list_physical_devices()
-gpus = tf.config.list_physical_devices('GPU')
+try:
+    physical_devices = tf.config.list_physical_devices()
+    gpus = tf.config.list_physical_devices('GPU')
 
-if gpus:
-    try:
-        # Enable memory growth for all GPUs
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        print(f"Found {len(gpus)} AMD GPU(s). Training will use GPU acceleration")
-        # Use mixed precision for better performance
-        tf.keras.mixed_precision.set_global_policy('mixed_float16')
-    except RuntimeError as e:
-        print(f"Error configuring GPU: {e}")
-else:
-    print("No compatible GPU found. Training will proceed on CPU")
-    print("Available devices:", physical_devices)
+    if gpus:
+        try:
+            # Enable memory growth for all GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            print(f"Found {len(gpus)} GPU(s). Training will use GPU acceleration")
+            # Use mixed precision for better performance
+            tf.keras.mixed_precision.set_global_policy('mixed_float16')
+        except RuntimeError as e:
+            print(f"Error configuring GPU: {e}")
+            print("Falling back to CPU")
+            # Disable GPU
+            tf.config.set_visible_devices([], 'GPU')
+    else:
+        print("No compatible GPU found. Training will proceed on CPU")
+        print("Available devices:", physical_devices)
+except Exception as e:
+    print(f"Error during device configuration: {e}")
+    print("Falling back to CPU-only mode")
+    # Disable GPU and ensure CPU usage
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    tf.config.set_visible_devices([], 'GPU')
 
 def create_sequences(data: np.ndarray, seq_length: int) -> Tuple[np.ndarray, np.ndarray]:
     """Create sequences with enhanced features for better prediction"""
