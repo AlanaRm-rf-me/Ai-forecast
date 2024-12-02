@@ -84,6 +84,7 @@ class CryptoForecastClient:
         
         # Load previous model if it exists
         model_path = os.path.join(self.models_dir, f"{crypto_id}_model.keras")
+        logging.info(f"Model path: {model_path}")  # Debug log
         
         try:
             forecast_data = ai_price_forecast(
@@ -91,9 +92,9 @@ class CryptoForecastClient:
                 crypto_id=crypto_id,
                 historical_days=365,
                 forecast_days=days,
-                model_path=model_path,  # Pass model path to save/load
-                save_path=model_path,   # Where to save the updated model
-                timeout=900  # Increase timeout to 15 minutes
+                model_path=model_path,
+                save_path=model_path,
+                timeout=900
             )
             
             if forecast_data:

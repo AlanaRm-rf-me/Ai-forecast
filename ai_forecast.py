@@ -21,42 +21,65 @@ import time
 if not logging.getLogger().handlers:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Get number of CPU cores
-num_cores = multiprocessing.cpu_count()
+# Force CPU usage if there are any GPU issues
+try:
+    # First, try to force CPU-only mode through environment variables
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TF CUDA warnings
+    
+    # Configure TensorFlow to use CPU
+    tf.config.set_visible_devices([], 'GPU')
+    
+    # Get number of CPU cores
+    num_cores = multiprocessing.cpu_count()
+    
+    # Configure TensorFlow to use all CPU cores effectively
+    tf.config.threading.set_inter_op_parallelism_threads(num_cores)
+    tf.config.threading.set_intra_op_parallelism_threads(num_cores)
+    tf.config.set_soft_device_placement(True)
+    
+    # Enable CPU optimization flags
+    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '1'
+    os.environ['TF_CPU_DETERMINISTIC_OPS'] = '0'
+    os.environ['TF_NUM_INTEROP_THREADS'] = str(num_cores)
+    os.environ['TF_NUM_INTRAOP_THREADS'] = str(num_cores)
+    
+    print(f"Training will utilize {num_cores} CPU cores")
+    
+    # Only attempt GPU initialization if explicitly requested
+    if os.environ.get('USE_GPU', '0') == '1':
+        try:
+            physical_devices = tf.config.list_physical_devices()
+            gpus = tf.config.list_physical_devices('GPU')
+            
+            if gpus:
+                try:
+                    # Enable memory growth for all GPUs
+                    for gpu in gpus:
+                        tf.config.experimental.set_memory_growth(gpu, True)
+                    print(f"Found {len(gpus)} GPU(s). Training will use GPU acceleration")
+                    tf.keras.mixed_precision.set_global_policy('mixed_float16')
+                except RuntimeError as e:
+                    print(f"Error configuring GPU: {e}")
+                    print("Falling back to CPU")
+                    tf.config.set_visible_devices([], 'GPU')
+            else:
+                print("No compatible GPU found. Training will proceed on CPU")
+                print("Available devices:", physical_devices)
+        except Exception as e:
+            print(f"Error during GPU configuration: {e}")
+            print("Proceeding with CPU-only mode")
+            tf.config.set_visible_devices([], 'GPU')
+    else:
+        print("GPU usage disabled. Running in CPU-only mode")
 
-# Configure TensorFlow to use all CPU cores effectively
-tf.config.threading.set_inter_op_parallelism_threads(num_cores)
-tf.config.threading.set_intra_op_parallelism_threads(num_cores)
-tf.config.set_soft_device_placement(True)
-
-# Enable CPU optimization flags
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '1'
-os.environ['TF_CPU_DETERMINISTIC_OPS'] = '0'
-os.environ['TF_NUM_INTEROP_THREADS'] = str(num_cores)
-os.environ['TF_NUM_INTRAOP_THREADS'] = str(num_cores)
-
-# Suppress TF info messages but keep warnings
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
-
-print(f"Training will utilize {num_cores} CPU cores")
-
-# Configure GPU settings
-physical_devices = tf.config.list_physical_devices()
-gpus = tf.config.list_physical_devices('GPU')
-
-if gpus:
-    try:
-        # Enable memory growth for all GPUs
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        print(f"Found {len(gpus)} AMD GPU(s). Training will use GPU acceleration")
-        # Use mixed precision for better performance
-        tf.keras.mixed_precision.set_global_policy('mixed_float16')
-    except RuntimeError as e:
-        print(f"Error configuring GPU: {e}")
-else:
-    print("No compatible GPU found. Training will proceed on CPU")
-    print("Available devices:", physical_devices)
+except Exception as e:
+    print(f"Error during device configuration: {e}")
+    print("Defaulting to basic CPU configuration")
+    # Minimal CPU configuration as fallback
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    tf.config.set_visible_devices([], 'GPU')
 
 def create_sequences(data: np.ndarray, seq_length: int) -> Tuple[np.ndarray, np.ndarray]:
     """Create sequences with enhanced features for better prediction"""
@@ -202,9 +225,9 @@ def plot_with_fallback(figure, title: str):
 def ai_price_forecast(
     api_url: str,
     crypto_id: str,
-    historical_days: int = 365,
+    historical_days: int = 180,
     forecast_days: int = 30,
-    seq_length: int = 60,
+    seq_length: int = 90,
     epochs: int = 500,
     batch_size: int = 32,
     patience: int = 30,
@@ -342,8 +365,8 @@ def ai_price_forecast(
                             pred = model.predict(last_features, verbose=0)
                             if pred is None or pred.size == 0:
                                 raise ValueError("Model prediction returned None or empty array")
-                            # Add noise scaled to recent volatility
-                            noise = np.random.normal(0, 0.02)  # 2% standard deviation
+                            # Adjusted noise to better reflect crypto volatility
+                            noise = np.random.normal(0, 0.05)  # Increased to 5% standard deviation
                             predictions.append(float(pred[0, 0]) * (1 + noise))
                             
                             if sim % 20 == 0:
@@ -374,17 +397,17 @@ def ai_price_forecast(
                     # Validate predictions are reasonable
                     if day > 0:
                         prev_price = forecasted_prices[-1]
-                        max_change = prev_price * 0.5  # Max 50% change per day
+                        max_change = prev_price * 0.75  # Increased to 75% to account for crypto volatility
                         if abs(predicted_price - prev_price) > max_change:
                             logging.warning(f"Large price change detected: ${prev_price:.2f} -> ${predicted_price:.2f}")
-                            # Dampen extreme predictions
+                            # Dampen extreme predictions but allow more movement
                             if predicted_price > prev_price:
                                 predicted_price = prev_price + max_change
                             else:
                                 predicted_price = prev_price - max_change
-                            # Recalculate bounds
-                            upper_bound = predicted_price * 1.1  # 10% upper bound
-                            lower_bound = predicted_price * 0.9  # 10% lower bound
+                            # Wider confidence bounds for crypto volatility
+                            upper_bound = predicted_price * 1.25  # 25% upper bound
+                            lower_bound = predicted_price * 0.75  # 25% lower bound
                     
                     forecast_dates.append(next_date)
                     forecasted_prices.append(predicted_price)
