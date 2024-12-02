@@ -202,9 +202,9 @@ def plot_with_fallback(figure, title: str):
 def ai_price_forecast(
     api_url: str,
     crypto_id: str,
-    historical_days: int = 365,
+    historical_days: int = 180,
     forecast_days: int = 30,
-    seq_length: int = 60,
+    seq_length: int = 90,
     epochs: int = 500,
     batch_size: int = 32,
     patience: int = 30,
@@ -342,8 +342,8 @@ def ai_price_forecast(
                             pred = model.predict(last_features, verbose=0)
                             if pred is None or pred.size == 0:
                                 raise ValueError("Model prediction returned None or empty array")
-                            # Add noise scaled to recent volatility
-                            noise = np.random.normal(0, 0.02)  # 2% standard deviation
+                            # Adjusted noise to better reflect crypto volatility
+                            noise = np.random.normal(0, 0.05)  # Increased to 5% standard deviation
                             predictions.append(float(pred[0, 0]) * (1 + noise))
                             
                             if sim % 20 == 0:
@@ -374,17 +374,17 @@ def ai_price_forecast(
                     # Validate predictions are reasonable
                     if day > 0:
                         prev_price = forecasted_prices[-1]
-                        max_change = prev_price * 0.5  # Max 50% change per day
+                        max_change = prev_price * 0.75  # Increased to 75% to account for crypto volatility
                         if abs(predicted_price - prev_price) > max_change:
                             logging.warning(f"Large price change detected: ${prev_price:.2f} -> ${predicted_price:.2f}")
-                            # Dampen extreme predictions
+                            # Dampen extreme predictions but allow more movement
                             if predicted_price > prev_price:
                                 predicted_price = prev_price + max_change
                             else:
                                 predicted_price = prev_price - max_change
-                            # Recalculate bounds
-                            upper_bound = predicted_price * 1.1  # 10% upper bound
-                            lower_bound = predicted_price * 0.9  # 10% lower bound
+                            # Wider confidence bounds for crypto volatility
+                            upper_bound = predicted_price * 1.25  # 25% upper bound
+                            lower_bound = predicted_price * 0.75  # 25% lower bound
                     
                     forecast_dates.append(next_date)
                     forecasted_prices.append(predicted_price)
