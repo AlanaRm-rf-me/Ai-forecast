@@ -81,6 +81,35 @@ except Exception as e:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
     tf.config.set_visible_devices([], 'GPU')
 
+# Enable CPU optimization flags
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '1'
+os.environ['TF_CPU_DETERMINISTIC_OPS'] = '0'
+os.environ['TF_NUM_INTEROP_THREADS'] = str(num_cores)
+os.environ['TF_NUM_INTRAOP_THREADS'] = str(num_cores)
+
+# Suppress TF info messages but keep warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
+print(f"Training will utilize {num_cores} CPU cores")
+
+# Configure GPU settings
+physical_devices = tf.config.list_physical_devices()
+gpus = tf.config.list_physical_devices('GPU')
+
+if gpus:
+    try:
+        # Enable memory growth for all GPUs
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        print(f"Found {len(gpus)} AMD GPU(s). Training will use GPU acceleration")
+        # Use mixed precision for better performance
+        tf.keras.mixed_precision.set_global_policy('mixed_float16')
+    except RuntimeError as e:
+        print(f"Error configuring GPU: {e}")
+else:
+    print("No compatible GPU found. Training will proceed on CPU")
+    print("Available devices:", physical_devices)
+
 def create_sequences(data: np.ndarray, seq_length: int) -> Tuple[np.ndarray, np.ndarray]:
     """Create sequences with enhanced features for better prediction"""
     sequences = []
